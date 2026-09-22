@@ -1,0 +1,23 @@
+name: MyAppCleaner
+options:
+  bundleIdPrefix: com.myappcleaner
+targets:
+  MyAppCleaner:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: MyAppCleaner
+    settings:
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: MyAppCleaner/Info.plist
+      properties:
+        UILaunchStoryboardName: LaunchScreen
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        NSPhotoLibraryUsageDescription: "MyAppCleaner needs access to your photos to find and remove duplicates, screenshots, and large videos."
+        NSContactsUsageDescription: "MyAppCleaner needs access to your contacts to find and merge duplicates."
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
