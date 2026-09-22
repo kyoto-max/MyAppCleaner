@@ -1,6 +1,7 @@
 import Foundation
 import Photos
 import Observation
+import Vision
 
 struct AssetGroup: Identifiable {
     let id = UUID()
@@ -78,34 +79,105 @@ class PhotoScanner {
             allAssets.append(asset)
         }
         
-        var groups: [AssetGroup] = []
-        var currentGroup: [PHAsset] = []
+        // 1. Time Clustering (24 hours)
+        var timeBuckets: [[PHAsset]] = []
+        var currentBucket: [PHAsset] = []
         
-        for i in 0..<allAssets.count {
-            let asset = allAssets[i]
-            if currentGroup.isEmpty {
-                currentGroup.append(asset)
+        for asset in allAssets {
+            if currentBucket.isEmpty {
+                currentBucket.append(asset)
                 continue
             }
-            
-            let last = currentGroup.last!
+            let last = currentBucket.first!
             if let date1 = last.creationDate, let date2 = asset.creationDate {
-                if abs(date2.timeIntervalSince(date1)) < 5 {
-                    currentGroup.append(asset)
+                if abs(date2.timeIntervalSince(date1)) <= 86400 {
+                    currentBucket.append(asset)
                 } else {
-                    if currentGroup.count > 1 {
-                        groups.append(AssetGroup(assets: currentGroup, bestAsset: currentGroup.first))
+                    if currentBucket.count > 1 {
+                        timeBuckets.append(currentBucket)
                     }
-                    currentGroup = [asset]
+                    currentBucket = [asset]
+                }
+            }
+        }
+        if currentBucket.count > 1 {
+            timeBuckets.append(currentBucket)
+        }
+        
+        // 2. Vision Processing
+        var groups: [AssetGroup] = []
+        
+        for bucket in timeBuckets {
+            var processedAssets: Set<String> = []
+            
+            for i in 0..<bucket.count {
+                let asset1 = bucket[i]
+                if processedAssets.contains(asset1.localIdentifier) { continue }
+                
+                var currentSimilarGroup: [PHAsset] = [asset1]
+                processedAssets.insert(asset1.localIdentifier)
+                
+                guard let print1 = try? await getFeaturePrint(for: asset1) else { continue }
+                
+                for j in (i+1)..<bucket.count {
+                    let asset2 = bucket[j]
+                    if processedAssets.contains(asset2.localIdentifier) { continue }
+                    
+                    guard let print2 = try? await getFeaturePrint(for: asset2) else { continue }
+                    
+                    var distance: Float = 0
+                    do {
+                        try print1.computeDistance(&distance, to: print2)
+                        // Distance < 10.0 indicates high visual similarity
+                        if distance < 10.0 {
+                            currentSimilarGroup.append(asset2)
+                            processedAssets.insert(asset2.localIdentifier)
+                        }
+                    } catch {
+                        print("Error computing distance: \(error)")
+                    }
+                }
+                
+                if currentSimilarGroup.count > 1 {
+                    groups.append(AssetGroup(assets: currentSimilarGroup, bestAsset: currentSimilarGroup.first))
                 }
             }
         }
         
-        if currentGroup.count > 1 {
-            groups.append(AssetGroup(assets: currentGroup, bestAsset: currentGroup.first))
-        }
-        
         await MainActor.run { self.similarPhotoGroups = groups }
+    }
+    
+    func getFeaturePrint(for asset: PHAsset) async throws -> VNFeaturePrintObservation {
+        return try await withCheckedThrowingContinuation { continuation in
+            let manager = PHImageManager.default()
+            let options = PHImageRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .fastFormat
+            options.isSynchronous = false
+            
+            let targetSize = CGSize(width: 256, height: 256)
+            
+            manager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFit, options: options) { image, info in
+                guard let cgImage = image?.cgImage else {
+                    continuation.resume(throwing: NSError(domain: "PhotoScanner", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not get CGImage"]))
+                    return
+                }
+                
+                let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                let request = VNGenerateImageFeaturePrintRequest()
+                
+                do {
+                    try requestHandler.perform([request])
+                    if let result = request.results?.first as? VNFeaturePrintObservation {
+                        continuation.resume(returning: result)
+                    } else {
+                        continuation.resume(throwing: NSError(domain: "PhotoScanner", code: 2, userInfo: [NSLocalizedDescriptionKey: "No feature print"]))
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
     
     func getAssetSize(asset: PHAsset) -> Int64 {
