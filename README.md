@@ -5,7 +5,7 @@ MyAppCleaner is an iOS storage cleaner app that helps users free up device space
 
 ## Features (Core Loop)
 - **Storage Dashboard**: View used and free device storage.
-- **Similar Photos**: Groups visually similar photos using timestamp clustering for rapid scanning. Marks the best photo automatically.
+- **Similar Photos**: Groups visually similar photos using Vision framework. Marks the best photo automatically.
 - **Large Videos**: Lists videos sorted by file size, highlighting those over 10MB.
 - **Screenshots**: Aggregates all screenshots in a single grid for easy multi-selection.
 - **Duplicate Contacts**: Scans the Contacts library to group identical names and allows easy merging/deletion.
